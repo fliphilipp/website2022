@@ -83,6 +83,8 @@ class dataCollector:
                     lon.append(p[1])
                     h.append(p[2])
         self.atl03 = pd.DataFrame(list(zip(lat,lon,h,confs)), columns = ['lat','lon','h','conf'])
+        df_unique_lat = self.atl03.groupby('lat').mean().reset_index()[['lat', 'lon']]
+        self.gt_coords = df_unique_lat.iloc[np.round(np.linspace(0,len(df_unique_lat)-1,100))]
         if verbose:
             print(' Done.')
             
@@ -91,6 +93,14 @@ class dataCollector:
         request_url = self.url.replace('atlXX',product)
         data = requests.get(request_url).json()
         self.atl06 = pd.DataFrame(data['series'][0]['lat_lon_elev'], columns = ['lat','lon','h'])
+        if verbose:
+            print(' Done.')
+            
+            print('---> requesting ATL07 data...',end='')
+        product = 'atl07'
+        request_url = self.url.replace('atlXX',product)
+        data = requests.get(request_url).json()
+        self.atl07 = pd.DataFrame(data['series'][0]['lat_lon_elev'], columns = ['lat','lon','h'])
         if verbose:
             print(' Done.')
             
@@ -115,26 +125,28 @@ class dataCollector:
         # create the figure and axis
         if axes_not_specified:
             fig, ax = plt.subplots(figsize=[10,6])
+            
         atl03 = ax.scatter(self.atl03.lat, self.atl03.h, s=2, color='black', alpha=0.2, label='ATL03')
-        atl06, = ax.plot(self.atl06.lat, self.atl06.h, label='ATL06')
-        atl08, = ax.plot(self.atl08.lat, self.atl08.h, label='ATL08', linestyle='--')
-
-        heights = self.atl03.h[self.atl03.conf != 'Noise']
-        y_min1 = np.min(heights)
-        y_max1 = np.max(heights)
-        maxprods = np.nanmax((self.atl06.h.max(), self.atl08.h.max()))
-        minprods = np.nanmin((self.atl06.h.min(), self.atl08.h.min()))
-        hrange = maxprods - minprods
-        y_min2 = minprods - hrange * 0.5
-        y_max2 = maxprods + hrange * 0.5
-        y_min = np.nanmin((y_min1, y_min2))
-        y_max = np.nanmax((y_max1, y_max2))
-
-        x_min = self.atl08.lat.min()
-        x_max = self.atl08.lat.max()
-
-        ax.set_xlim((x_min, x_max))
-        ax.set_ylim((y_min, y_max))
+        if len(self.atl06) > 0: 
+            atl06, = ax.plot(self.atl06.lat, self.atl06.h, label='ATL06')
+        if len(self.atl08) > 0:
+            atl08, = ax.plot(self.atl08.lat, self.atl08.h, label='ATL08', linestyle='--')
+            if np.sum(np.isfinite(self.atl08.canopy)) > 0: 
+                canopy = ax.scatter(self.atl08.lat, self.atl08.h+self.atl08.canopy, s=2, alpha=1, label='ATL08 canopy')
+            
+        #adjust axis limits
+        try: 
+            ax.set_xlim(self.latlims)
+        except Exception as e: 
+            print('Could not automatically adjust xlim on plot:', e)
+    
+        try: 
+            heights_ph = self.atl03.h[self.atl03.conf != 'Noise']
+            y_min = np.nanmin(heights_ph)
+            y_max = np.nanmax(heights_ph)
+            ax.set_ylim((y_min, y_max))
+        except Exception as e: 
+            print('Could not automatically adjust ylim on plot:', e)
 
         # label the axes
         ax.set_title(title)
@@ -212,17 +224,28 @@ class dataCollector:
             c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))
             return R * c
 
-        lat1, lat2 = self.atl08.lat[0], self.atl08.lat.iloc[-1]
-        lon1, lon2 = self.atl08.lon[0], self.atl08.lon.iloc[-1]
+        # lat1, lat2 = self.atl08.lat[0], self.atl08.lat.iloc[-1]
+        # lon1, lon2 = self.atl08.lon[0], self.atl08.lon.iloc[-1]
+        lat1, lat2 = self.atl03.lat[0], self.atl03.lat.iloc[-1]
+        lon1, lon2 = self.atl03.lon[0], self.atl03.lon.iloc[-1]
         center_lat = (lat1 + lat2) / 2
         center_lon = (lon1 + lon2) / 2
         ground_track_length = dist_latlon2meters(lat1, lon1, lat2, lon2)
         print('The ground track is %d meters long.' % np.round(ground_track_length))
-
-        collection_name1 = 'COPERNICUS/S2_SR'  # Sentinel-2 earth engine collection 
+        
+        collection_name1 = 'COPERNICUS/S2' # Sentinel-2 earth engine collection
+        collection_name2 = 'COPERNICUS/S2_SR' # Sentinel-2 Surface reflectance earth engine collection 
+        collection_name3 = 'COPERNICUS/S3/OLCI' # Sentinel-3 OLCI EFR: Ocean and Land Color Instrument Earth Observation Full Resolution
         # https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR
 
-        collection_name2 = 'LANDSAT/LC08/C01/T2'  # Landsat 8 earth engine collection 
+        collection_name4 = 'LANDSAT/LC08/C01/T2'  # Landsat 8 earth engine collection 
+        collection_name5 = 'LANDSAT/LC08/C01/T1_RT'  # Landsat 8 earth engine collection 
+        collection_name6 = 'LANDSAT/LC08/C01/T1_SR'
+        collection_name7 = 'LANDSAT/LC08/C01/T2_SR'
+        collection_name8 = 'LANDSAT/LC08/C02/T1_L2'
+        collection_name9 = 'LANDSAT/LC08/C02/T2_L2'
+        collection_name10 = 'LANDSAT/LC09/C02/T1_L2'
+        collection_name11 = 'LANDSAT/LC09/C02/T2_L2'
         # https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C01_T2
         # Note: Landsat 8 ingestion into Earth Engine seems to not have reached Antarctica yet, so using raw scenes...
 
@@ -241,8 +264,11 @@ class dataCollector:
             # 2) filter by acquisition date
             # 3) filter by the point of interest
             # 4) sort by acquisition date
-            collection = ee.ImageCollection(collection_name1) \
-                .merge(ee.ImageCollection(collection_name2)) \
+            collection = ee.ImageCollection(collection_name2) \
+                .merge(ee.ImageCollection(collection_name4)) \
+                .merge(ee.ImageCollection(collection_name5)) \
+                .merge(ee.ImageCollection(collection_name10)) \
+                .merge(ee.ImageCollection(collection_name11)) \
                 .filterDate(search_start, search_end) \
                 .filterBounds(point_of_interest) \
                 .sort('system:time_start') 
@@ -258,16 +284,24 @@ class dataCollector:
 
         # if query returns more than 20 images, try to narrow it down
         tries = 0
-        while (n_imgs > 20) & (tries<5): 
+        while (n_imgs > 25) & (tries<10): 
             print('----> This is too many. Narrowing it down...')
-            days_buffer = np.round(days_buffer * 15 / n_imgs)
+            days_buffer = int(np.round(days_buffer * 20 / n_imgs))
             collection, info, n_imgs = query_scenes(self, days_buffer)
             n_imgs = len(info['features'])
             tries += 1
-
-        # if query returns no images, then return
-        if n_imgs < 1: 
-            print('NO SCENES FOUND. Try to widen your search by including more dates.')
+            
+        # if query returns too few images, widen search window
+        tries = 0
+        while (n_imgs < 1) & (tries<10):
+            print('NO SCENES FOUND ----> Widening search window...')
+            days_buffer = int(np.round(days_buffer * 2))
+            collection, info, n_imgs = query_scenes(self, days_buffer)
+            n_imgs = len(info['features'])
+            tries += 1
+            
+        if n_imgs == 0:
+            print('NO SCENES FOUND ----> Abort mission.\nIt is likely that you searched for a date where there is no imagery :(')
             return
 
         # region of interest around the ground track (use this area to scale visualization factors)
@@ -276,6 +310,8 @@ class dataCollector:
 
         # make an earth engine feature collection from the ground track so we can show it on the map
         ground_track_coordinates = list(zip(self.atl08.lon, self.atl08.lat))
+        # hacky fix to get ground track from ATL03
+        ground_track_coordinates = list(zip(self.gt_coords.lon, self.gt_coords.lat))
         ground_track_projection = 'EPSG:4326' # <-- this specifies that our data longitude/latitude in degrees [https://epsg.io/4326]
         gtx_feature = ee.FeatureCollection(ee.Geometry.LineString(coords=ground_track_coordinates,
                                                                   proj=ground_track_projection,
@@ -285,35 +321,50 @@ class dataCollector:
         Map.add_basemap('HYBRID')
 
         for i, feature in enumerate(info['features']):
+            
+            try: 
+                # get the relevant info
+                thisDate = datetime.fromtimestamp(feature['properties']['system:time_start']/1e3)
+                dtstr = thisDate.strftime('%Y-%m-%d')
+                dt = (thisDate - datetime.strptime(self.date, '%Y-%m-%d')).days
+                ID = feature['id']
+                rel = 'before' if dt<0 else 'after'
+                print('%02d: %s (%3d days %s ICESat-2 overpass): %s' % (i, dtstr, np.abs(dt), rel, ID))
 
-            # get the relevant info
-            thisDate = datetime.fromtimestamp(feature['properties']['system:time_start']/1e3)
-            dtstr = thisDate.strftime('%Y-%m-%d')
-            dt = (thisDate - datetime.strptime(self.date, '%Y-%m-%d')).days
-            ID = feature['id']
-            rel = 'before' if dt<0 else 'after'
-            print('%02d: %s (%3d days %s ICESat-2 overpass): %s' % (i, dtstr, np.abs(dt), rel, ID))
+                # get image by id, and normalize rgb range
+                image_id = feature['id']
+                thisScene = ee.Image(image_id)
+                if 'COPERNICUS/S2' in ID: 
+                    rgb = thisScene.select('B4', 'B3', 'B2')
+                elif 'COPERNICUS/S3/OLCI' in ID:
+                    rgb = thisScene.select(['Oa08_radiance', 'Oa06_radiance', 'Oa04_radiance'])
+                elif ('LANDSAT/LC08/C02' in ID) | ('LANDSAT/LC09/C02' in ID):
+                    rgb = thisScene.select(['SR_B4', 'SR_B3', 'SR_B2'])
+                    #pan = thisScene.select('SR_B8')
+                elif 'LANDSAT/LC08/C01' in ID:
+                    rgb = thisScene.select('B4', 'B3', 'B2')
+                    #pan = thisScene.select('B8')
+                else:
+                    rgb = thisScene.select('B4', 'B3', 'B2')
 
-            # get image by id, and normalize rgb range
-            image_id = feature['id']
-            thisScene = ee.Image(image_id)
-            rgb = thisScene.select('B4', 'B3', 'B2')
-            rgbmax = rgb.reduce(ee.Reducer.max()).reduceRegion(reducer=ee.Reducer.max(), geometry=region_of_interest, bestEffort=True, maxPixels=1e6)
-            rgbmin = rgb.reduce(ee.Reducer.min()).reduceRegion(reducer=ee.Reducer.min(), geometry=region_of_interest, bestEffort=True, maxPixels=1e6)
-            rgb = rgb.unitScale(ee.Number(rgbmin.get('min')), ee.Number(rgbmax.get('max'))).clamp(0.0, 1.0)
+                # if the image is Landsat 8, then pan-sharpen the image
+                # if 'LANDSAT' in ID: 
+                #     huesat = rgb.rgbToHsv().select('hue', 'saturation')
+                #     rgb = ee.Image.cat(huesat, pan).hsvToRgb()
 
-            # if the image is Landsat 8, then pan-sharpen the image
-            if 'LANDSAT' in ID: 
-                pan = thisScene.select('B8').unitScale(ee.Number(rgbmin.get('min')), ee.Number(rgbmax.get('max'))).clamp(0.0, 1.0)
-                huesat = rgb.rgbToHsv().select('hue', 'saturation')
-                rgb = ee.Image.cat(huesat, pan).hsvToRgb().clamp(0.0, 1.0)
+                rgbmax = rgb.reduce(ee.Reducer.max()).reduceRegion(reducer=ee.Reducer.max(), geometry=region_of_interest, bestEffort=True, maxPixels=1e6)
+                rgbmin = rgb.reduce(ee.Reducer.min()).reduceRegion(reducer=ee.Reducer.min(), geometry=region_of_interest, bestEffort=True, maxPixels=1e6)
+                rgb = rgb.unitScale(ee.Number(rgbmin.get('min')), ee.Number(rgbmax.get('max'))).clamp(0.0, 1.0)
 
-            # make the image uint8
-            rgb = rgb.multiply(255).uint8()
+                # make the image uint8
+                rgb = rgb.multiply(255).uint8()
 
-            # add to map (only show the first layer, then can toggle others on in map)
-            show_layer = True if i==0 else False
-            Map.addLayer(rgb, name='%02d: %d days, %s'%(i,dt,ID), shown=show_layer)
+                # add to map (only show the first layer, then can toggle others on in map)
+                show_layer = True if i==0 else False
+                Map.addLayer(rgb, name='%02d: %d days, %s'%(i,dt,ID), shown=show_layer)
+                
+            except Exception as e: 
+                print('Something went wrong with this image :(', e)
 
         # show ground track on map, and center on our region of interest
         Map.addLayer(gtx_feature, {'color': 'red'}, 'ground track')
@@ -377,19 +428,38 @@ class dataCollector:
             print('This file already exists, not downloading again: %s' % download_filename)
         else:
             # get image by id, and normalize rgb range
-            rgb = thisScene.select('B4', 'B3', 'B2')
+            if 'COPERNICUS/S2' in scene_id: 
+                rgb = thisScene.select('B4', 'B3', 'B2')
+            elif 'COPERNICUS/S3/OLCI' in scene_id:
+                rgb = thisScene.select(['Oa08_radiance', 'Oa06_radiance', 'Oa04_radiance'])
+            elif ('LANDSAT/LC08/C02' in scene_id) | ('LANDSAT/LC09/C02' in ID):
+                rgb = thisScene.select(['SR_B4', 'SR_B3', 'SR_B2'])
+                #pan = thisScene.select('SR_B8')
+            elif 'LANDSAT/LC08/C01' in scene_id:
+                rgb = thisScene.select('B4', 'B3', 'B2')
+                #pan = thisScene.select('B8')
+            else:
+                rgb = thisScene.select('B4', 'B3', 'B2')
+
             rgbmax = rgb.reduce(ee.Reducer.max()).reduceRegion(reducer=ee.Reducer.max(), geometry=region_of_interest, bestEffort=True, maxPixels=1e6)
             rgbmin = rgb.reduce(ee.Reducer.min()).reduceRegion(reducer=ee.Reducer.min(), geometry=region_of_interest, bestEffort=True, maxPixels=1e6)
             rgb = rgb.unitScale(ee.Number(rgbmin.get('min')), ee.Number(rgbmax.get('max'))).clamp(0.0, 1.0)
+            
+            
+            # # get image by id, and normalize rgb range
+            # rgb = thisScene.select('B4', 'B3', 'B2')
+            # rgbmax = rgb.reduce(ee.Reducer.max()).reduceRegion(reducer=ee.Reducer.max(), geometry=region_of_interest, bestEffort=True, maxPixels=1e6)
+            # rgbmin = rgb.reduce(ee.Reducer.min()).reduceRegion(reducer=ee.Reducer.min(), geometry=region_of_interest, bestEffort=True, maxPixels=1e6)
+            # rgb = rgb.unitScale(ee.Number(rgbmin.get('min')), ee.Number(rgbmax.get('max'))).clamp(0.0, 1.0)
 
-            # if the image is Landsat 8, then pan-sharpen the image
-            if 'LANDSAT' in scene_id: 
-                pan = thisScene.select('B8').unitScale(ee.Number(rgbmin.get('min')), ee.Number(rgbmax.get('max'))).clamp(0.0, 1.0)
-                huesat = rgb.rgbToHsv().select('hue', 'saturation')
-                rgb = ee.Image.cat(huesat, pan).hsvToRgb().clamp(0.0, 1.0)
+#             # if the image is Landsat 8, then pan-sharpen the image
+#             if 'LANDSAT' in scene_id: 
+#                 pan = thisScene.select('B8').unitScale(ee.Number(rgbmin.get('min')), ee.Number(rgbmax.get('max'))).clamp(0.0, 1.0)
+#                 huesat = rgb.rgbToHsv().select('hue', 'saturation')
+#                 rgb = ee.Image.cat(huesat, pan).hsvToRgb().clamp(0.0, 1.0)
 
             # make the image uint8
-            rgb = rgb.multiply(255).uint8()
+            rgb = rgb.multiply(255).uint8().resample('bilinear')
 
             rgb_info = rgb.getInfo()
             downloadURL = rgb.getDownloadUrl({'name': 'mySatelliteImage',
